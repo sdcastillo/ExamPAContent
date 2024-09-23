@@ -1,0 +1,508 @@
+---
+title: "Titanic Solution"
+subtitle: "ExamPA.net Practice Exam"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document: 
+    theme: cerulean
+    toc: true
+    code_folding: show
+    toc_float: true
+---
+
+For your convenience, this solution document has been formatted to be easy to read.  When taking this exam, candidates are not expected to make their `.Rmd` documents look this way.  The `make_table` function is included only to improve your reading experience.  The SOA's instructions from the Project Statement say only that
+
+>At a minimum you must submit your completed report template and an Rmd file that supports your work.  Graders expect that your Rmd code can be run from beginning to end.  The code snippets provided should either be commented out or adapted for execution.  Ensure that it is clear where in the code each of the tasks is addressed.  Documentation of your thought process and conclusion for each task should be completely contained within your Word report.  The Rmd code should be clear, may contain commentary, and support your work.
+
+Your assistant has provided code throughout this document.  The structure of the code can always be treated as being correct, however, there is no gaurantee that the parameter choices are best.
+
+```{r, message = FALSE, warning = F}
+#NO CHANGES NEEDED
+set.seed(1234)
+#install.packages(c("car", "fastDummies", "ROCR"))
+library(caret) 
+library(randomForest) 
+library(rpart)
+library(rpart.plot)
+library(car)
+library(e1071)
+library(broom)
+library(fastDummies)
+library(caret)
+library(ROCR)
+library(tidyverse)
+library(glmnet)
+library(dplyr)
+library(scales)
+library(kableExtra)
+library(ExamPAData)
+theme_set(theme_minimal())
+
+#function to create html tables
+make_table <- function(df, caption = ""){
+  df %>% 
+    kable(caption = caption) %>% 
+    kable_styling(bootstrap_options = "striped", full_width = F)}
+
+#global chunk options
+knitr::opts_chunk$set(warning = F, message = F, echo = T, fig.width = 14, fig.height = 8, dev.args = list(type = "cairo"))
+```
+
+```{r eval = F}
+#NO CHANGES NEEDED
+#This code was used to add 15 "fake" outliers
+#This is being included so that you can see how it was created
+
+df <- read_csv("train.csv")
+names(df) <- tolower(names(df))
+#impute median or mode values
+df <- df %>% mutate(age = ifelse(is.na(age), median(df$age, na.rm = T), age),
+                    embarked = ifelse(is.na(embarked), "S", embarked)) %>% 
+  select(-cabin)
+
+#add 15 outlier points
+#outliers should be for age, fare,  pclass, family_size
+n_outliers <- 15
+outliers <- tibble(
+  passengerid = 1:n_outliers,
+  survived = sample(c(1,0), n_outliers, replace = T),
+  pclass = sample(3, n_outliers, replace = T),
+  name = sample(df$name, n_outliers, replace = T),
+  sex = sample(df$sex, n_outliers, replace = T),
+  age = sample(c(1, 100, 105, 97, 0), n_outliers, replace = T),
+  sibsp = sample(c(5,10, 20),n_outliers, replace = T),
+  parch = sample(df$parch, n_outliers, replace = T) + 5,
+  ticket = sample(df$ticket, n_outliers, replace = T),
+  fare = runif(n_outliers, min = 600, max = 1200),
+  embarked = sample(df$embarked, n_outliers, replace = T)
+)
+
+df <- df %>% mutate(fare = ifelse(fare == 0, median(df$fare), fare))
+df <- df %>% rbind(outliers)
+df %>% write_csv("titanic.csv")
+```
+
+```{r}
+#NO CHANGES NEEDED
+#convert factor levels to those with the most observations
+df <- exam_pa_titanic %>% 
+  mutate_at(.vars = c("sex", "embarked"), .funs = fct_infreq)
+```
+
+## Task 1 - Explore the data
+
+```{r, message=FALSE, warning=FALSE}
+df %>% glimpse()
+
+#can also use
+#summary(df)
+#str(df)
+```
+
+```{r}
+#NO CHANGES NEEDED
+df %>% count(survived) %>% mutate(percent_of_passengers = percent(n/sum(n))) %>% make_table()
+```
+
+
+```{r}
+#NO CHANGES NEEDED
+df %>% 
+  group_by(sex) %>% 
+  summarise(n = n(),
+          percent_survived = percent(sum(survived==1)/n()))%>% make_table()
+
+df %>% 
+  group_by(pclass) %>% 
+  summarise(n = n(),
+            percent_survived = percent(sum(survived==1)/n()))%>% make_table()
+
+df %>% 
+  group_by(embarked) %>% 
+  summarise(n = n(),
+           percent_survived = percent(sum(survived==1)/n()))%>% make_table()
+
+```
+
+```{r fig.width=6, fig.height=4}
+summary(df$fare)
+df %>% 
+  ggplot(aes(as.factor(survived), fare)) + 
+  geom_boxplot()
+
+df <- df %>% mutate(fare = log(fare))
+df %>% ggplot(aes(fare)) + geom_histogram()
+
+summary(df$age)
+df %>% 
+  ggplot(aes(as.factor(survived), age)) + 
+  geom_boxplot()
+df %>% ggplot(aes(age)) + geom_histogram()
+```
+
+
+## Task 2 - Create a new variable called "title"
+
+```{r, message=FALSE, warning=FALSE}
+##Lets extract the title and check if we have predictive power in that
+df <- df %>% mutate(title = gsub("^.*, (.*?)\\..*$", "\\1", name))
+
+df %>% count(title)
+
+df <- df %>% mutate(
+  title = case_when(
+    title %in% c("Miss","Mlle","Ms", "MS", "Lady", "Dona") ~ "Miss",
+    title == "Mme" ~ "Mrs",
+    title %in% c("Officer", "Capt", "Col", "Major", "Dr", "Rev", "Don", "Sir", "the Countess", "Jonkheer") ~ "Officer",
+    T ~ title
+  ) %>% fct_infreq()
+) 
+df %>% count(title) %>% make_table()
+
+```
+
+```{r}
+#BASE R TEMPLATE
+##Lets extract the title and check if we have predictive power in that
+df$title <- gsub("^.*, (.*?)\\..*$", "\\1", df$name)
+
+table(df$title)
+
+#This code simplies the title
+#For example, passengers which have "Miss", "Mlle", "MS", or "Ms" in their name get the title "Miss"
+df$title <- ifelse(df$title %in% c("Miss","Mlle","Ms", "MS", "Lady", "Dona"), yes = "Miss", no = df$title)
+df$title <- ifelse(df$title == "Mme", yes = "Mrs", no = df$title)
+df$title <- ifelse(df$title %in% c("Officer", "Capt", "Col", "Major", "Dr", "Rev", "Don", "Sir", "the Countess", "Jonkheer"), yes = "Officer", no = df$title)
+
+table(df$title)
+
+#Set the base factor level to the title with the most observations
+df$title <- fct_infreq(df$title)
+```
+
+## Task 3 - Create a new variable called "family_size"
+
+```{r}
+df <- df %>% mutate(family_size = sibsp + parch + 1)
+
+#df$famil_size = df$sibsp + df$parch + 1
+```
+
+## Task 4 - Use kmeans to detect outliers
+
+```{r}
+#NO CHANGES NEEDED
+set.seed(1234)
+cluster_data <- df %>% 
+  select(age, fare,  pclass, family_size) %>% 
+  mutate(fare = exp(fare))#undo the log transform for clustering
+
+run_kmeans <- function(centers, nstart){
+  kmeans = kmeans(cluster_data, centers = centers, nstart = nstart)
+
+  df <- cluster_data %>% mutate(
+    cluster = as.factor(kmeans$cluster)
+  ) 
+  
+  counts <- df %>% count(cluster)
+  list("kmeans" = kmeans, "counts" = counts)
+}
+```
+
+```{r}
+#Run KMeans
+#Choose values for centers and nstart
+run1 <- run_kmeans(centers = 10, nstart = 3)
+run1$counts
+
+run2 <- run_kmeans(centers = 2,nstart = 50)
+run2$counts %>% make_table()
+
+run3 <- run_kmeans(centers = 3,nstart = 50)
+run3$counts %>% make_table()
+
+#select the kmeans run to use
+#select the clusters which you are counting as outliers
+#i.e., if clusters 4 and 5 were the "outliers", say outlier_clusters <- c(4,5)
+
+selected_run <- run3
+outlier_clusters <- c(3)
+
+#add selected cluster assignment to the data
+df <- df %>% mutate(
+  cluster = selected_run$kmeans$cluster %>% as.factor(),
+  outlier_flag = ifelse(cluster %in% outlier_clusters, 1, 0) %>% as.factor() %>% fct_infreq()
+) 
+```
+
+## Cluster Assignments
+
+```{r}
+#NO CHANGES NEEDED
+p1 <- df %>% ggplot(aes(age,fare, color = cluster)) + geom_point() + theme(legend.position = "none")
+p2 <- df %>% ggplot(aes(pclass,family_size, color = cluster)) + geom_point()+ theme(legend.position = "none")
+p3 <- df %>% ggplot(aes(fare,family_size, color = cluster)) + geom_point()+ theme(legend.position = "none")
+p4 <- df %>% ggplot(aes(age,pclass, color = cluster)) + geom_point()+ theme(legend.position = "none")
+gridExtra::grid.arrange(p1,p2,p3, p4)
+
+df <- df %>% select(-cluster)
+```
+
+## Probable Outliers
+
+```{r}
+#NO CHANGES NEEDED
+p1 <- df %>% ggplot(aes(age,fare, color = outlier_flag)) + geom_point() + theme(legend.position = "none")
+p2 <- df %>% ggplot(aes(pclass,family_size, color = outlier_flag)) + geom_point()+ theme(legend.position = "none")
+p3 <- df %>% ggplot(aes(fare,family_size, color = outlier_flag)) + geom_point()+ theme(legend.position = "none")
+p4 <- df %>% ggplot(aes(age,pclass, color = outlier_flag)) + geom_point()+ theme(legend.position = "none")
+gridExtra::grid.arrange(p1,p2,p3, p4)
+```
+
+
+## Task 5 - Select which variables should be used in modeling
+
+```{r}
+#SELECT WHICH VARIABLES YOU WANT TO REMOVE
+variables_to_remove <- c("passengerid", "name", "ticket")
+df <- df %>% select(-variables_to_remove)
+```
+
+```{r}
+#NO CHANGES NEEDED
+#create dummy columns and split into train and test sets
+df_factors <- df %>% select(pclass, sex, embarked, title)
+df_dummies = df %>% 
+  dummy_cols(remove_first_dummy = T) %>%
+  select(-sex, -title, -embarked)
+  
+df_dummies %>% dim()
+df <- df_dummies
+
+train_index <- createDataPartition(df$survived, p = 0.75, list = F) %>% as.numeric()
+train <- df %>% dplyr::slice(train_index)
+test <- df %>% dplyr::slice(-train_index)
+train %>% summarise(train_percent_survived = sum(survived==1)/n())
+test %>% summarise(test_percent_survived = sum(survived==1)/n())
+dim(train)
+```
+
+## Task 6 - Fit a random forest for variable selection
+
+```{r, message=FALSE, warning=FALSE}
+set.seed(1234)
+#remove cabin, ticket, name
+rf <- randomForest(survived~.,
+                     data = train,
+                     ntree = 3, #MAKE A SELECTION
+                     mtry = 300,#MAKE A SELECTION
+                  importance = T)
+
+plot(rf)
+predictions <- as.vector(predict(rf, test))
+pred <- prediction(predictions, test$survived)
+
+accuracy <- sum((predict(rf, test) > 0.5) == test$survived)/nrow(test)
+
+perf_measures <- performance(pred, "auc")
+auc <- perf_measures@y.values[[1]]
+
+print("Accuracy")
+accuracy
+
+print("AUC")
+auc
+
+#VARIABLE IMPORTANCE
+importance <- varImp(rf)
+rf_results <- tibble(variable = rownames(importance),
+       importance = importance$Overall) %>% 
+  arrange(desc(importance)) %>% 
+  head(7)
+
+rf_results %>% make_table()
+
+#note: ignore the error "The response has five or fewer unique values.  Are you sure you want to do regression?".  This is due to a bug in the randomForest library.
+```
+
+```{r warning = F}
+sqrt(ncol(train))
+set.seed(1234)
+rf <- randomForest(survived~.,
+                     data = train,
+                     ntree = 200,
+                     mtry = 4, #the default value
+                  importance = T,
+                  keep.forest = T)
+plot(rf)
+predictions <- as.vector(predict(rf, newdata =test))
+pred <- prediction(predictions, test$survived)
+
+accuracy <- sum((predict(rf, test) > 0.5) == test$survived)/nrow(test)
+
+perf_measures <- performance(pred, "auc")
+auc <- perf_measures@y.values[[1]]
+
+print("Accuracy")
+accuracy
+
+print("AUC")
+auc
+```
+
+## Task 7 - Choose the top 7 variables by importance
+
+```{r}
+#NO CHANGES NEEDED
+importance <- varImp(rf)
+rf_results <- tibble(variable = rownames(importance),
+       importance = importance$Overall) %>% 
+  arrange(desc(importance)) %>% 
+  head(7)
+  
+rf_results %>% make_table()
+```
+
+
+## Task 8 - Fit a logistic regression and interpret the coefficients
+
+```{r, message=FALSE, warning=FALSE}
+#SELECT VARIABLES TO USE IN LOGIT
+#Note: parch, sibsib, or family size are linearly dependent
+logit_vars <- c("survived", "sex_female", "pclass", "age", "fare", "title_Master", "family_size", "title_Miss")
+```
+
+```{r}
+#NO CHANGES NEEDED
+logit_train <- train %>% select(logit_vars)
+logit_test <- test %>% select(logit_vars)
+
+model <- glm(survived ~ ., 
+            family = binomial(link="logit"), 
+            data = logit_train)
+summary(model)
+model %>% tidy() %>% select(term, estimate) %>% make_table()
+```
+
+## Task 9 - Using the model's coefficients, calculate the probability for persons of age 10, 30, and 60 of surviving
+
+```{r}
+#NO CHANGES NEEDED
+#This code gets the median (for continuous) and mode (for categorical) variables
+continuous_vars <- c("fare", "family_size", "family_size")
+train %>% select(continuous_vars) %>% summarise_all(~round(median(.x),1))
+
+categorical_vars <- c("sex_female", "pclass","title_Master", "title_Miss")
+getmode <- function(v) {
+   uniqv <- unique(v)
+   uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+train %>% select(categorical_vars) %>% summarise_all(getmode)
+```
+
+```{r}
+#check that the Excel calculation matches
+#create a fake passenger with age 10
+person_age_10 <- tibble(age = 10, #should be set to the median age
+                        fare = 2.7, #should be set to the median fare
+                        family_size = 1, #should be set to the median family size
+                        title_Miss = 0, #should be set to the mode of title_Mrs
+                        pclass = 3, #etc
+                        sex_female = 0,
+                        title_Master = 0)
+```
+
+```{r}
+#NO CHANGES NEEDED
+#CHECK THAT THE EXCEL CALCULATION MATCHES 
+predict(model, person_age_10, type = "response")
+person_age_30 = person_age_10 %>% mutate(age = 30)
+predict(model, person_age_30, type = "response")
+person_age_60 = person_age_10 %>% mutate(age = 60)
+predict(model, person_age_60, type = "response")
+```
+
+## Task 10 - Validate the logistic regression
+
+```{r}
+#NO CHANGES NEEDED
+predictions <- as.vector(predict(model, test))
+pred <- prediction(predictions, test$survived)
+perf_measures <- performance(pred, "auc")
+auc <- perf_measures@y.values[[1]]
+
+print("Accuracy")
+sum((predict(model, test) > 0.5) == test$survived)/nrow(test)
+
+print("AUC")
+auc
+```
+
+
+## Task 11 - Fit an elastic net
+
+```{r message=F}
+x <- model.matrix(survived ~ .^2, data = logit_train )
+colnames(x)
+
+lasso_cv <- cv.glmnet(x = x, 
+            y = train$survived,
+            family = "binomial",
+            alpha = 1) #alpha = 1 implies LASSO, alpha = 0 implies ridge
+```
+
+## Task 12 - Choose a value of lambda
+
+```{r fig.width=8, fig.height=5}
+plot(lasso_cv)
+log(lasso_cv$lambda.min)
+```
+
+```{r fig.width=8, fig.height=5}
+model <- glmnet(x = x, 
+            y = logit_train$survived,
+            family = "binomial", 
+            alpha = 1) #alpha = 1 implies LASSO, alpha = 0 implies ridge
+
+plot(model, label = T, xvar = "dev")
+```
+
+```{r fig.width=8, fig.height=5}
+model <- glmnet(x = x, 
+            y = logit_train$survived,
+            family = "binomial", 
+            alpha = 1) #alpha = 1 implies LASSO, alpha = 0 implies ridge
+
+plot(model, label = T, xvar = "lambda")
+```
+
+```{r}
+selected_lambda <- lasso_cv$lambda.min
+selected_lambda <- exp(-4)
+
+model <- glmnet(x = x, 
+            y = logit_train$survived,
+            family = "binomial", 
+            lambda = selected_lambda,
+            alpha = 1) 
+
+model$beta 
+```
+
+## Task 13 - Compare the AUC with the logit's AUC
+
+```{r}
+#NO CHANGES NEEDED
+x_test <- model.matrix(survived ~ .^2, data = logit_test)
+
+predictions <- as.vector(predict(model, x_test))
+pred <- prediction(predictions, test$survived)
+perf_measures <- performance(pred, "auc")
+auc <- perf_measures@y.values[[1]]
+
+print("Accuracy")
+sum((predictions > 0.1) == test$survived)/nrow(test)
+print("AUC")
+auc
+```
+
