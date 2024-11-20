@@ -1,0 +1,365 @@
+---
+title: "Health Costs Solution"
+subtitle: "Visit www.PredictiveInsightsAI.com"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document: 
+    theme: cerulean
+    toc: true
+    code_folding: show
+    toc_float: true
+---
+
+### Task 1 - Write a high-level summary of the data 
+
+```{r message = F}
+#Set up
+#No changes needed to this code chunk
+
+#set up
+library(tidyverse)
+library(ExamPAData)
+library(gbm)
+library(caret)
+library(kableExtra)
+
+#function to create html tables
+make_table <- function(df, caption = ""){
+  df %>% 
+    kable(caption = caption) %>% 
+    kable_styling(bootstrap_options = "striped", full_width = F)}
+
+#global chunk options
+knitr::opts_chunk$set(warning = F, message = F, echo = T, fig.width = 14, fig.height = 8, dev.args = list(type = "cairo"))
+
+theme_set(theme_bw())
+set.seed(1234)
+
+#set factor levels to those with the most observations
+health_insurance <- health_insurance %>% 
+  mutate(sex = fct_infreq(sex),
+         smoker = fct_infreq(smoker),
+         region = fct_infreq(region),
+         )
+```
+
+```{r}
+#start here
+health_insurance %>% glimpse()
+
+#Can also use
+#summary(health_insurance)
+#str(health_insurance)
+```
+
+
+### Task 2 - Explore the target variables CHARGES and its relationship with SMOKER and BMI 
+
+```{r}
+health_insurance %>% 
+  ggplot(aes(charges)) +
+  geom_histogram()
+
+health_insurance$charges %>% summary()
+
+health_insurance %>% ggplot(aes(bmi)) + geom_histogram()
+```
+
+```{r}
+health_insurance %>% 
+  ggplot(aes(charges, fill = smoker)) +
+  geom_histogram()
+
+health_insurance %>% 
+  group_by(smoker) %>% 
+  summarise(mean = mean(charges),
+            median = median(charges)) %>% 
+  make_table()
+```
+
+
+```{r}
+health_insurance %>% 
+  ggplot(aes(charges)) + 
+  geom_histogram() + 
+  facet_wrap(vars(smoker))
+```
+
+```{r}
+health_insurance %>% 
+  ggplot(aes(charges, bmi)) + 
+  geom_point()
+```
+
+```{r}
+health_insurance %>% 
+  ggplot(aes(charges, bmi, color = smoker)) + 
+  geom_point()
+```
+
+
+### Task 3 - Engineer additional features
+
+```{r}
+#your code here
+health_insurance <- health_insurance%>% 
+  mutate(age_bucket = case_when(
+    age < 24 ~ 1,
+    age <= 36 ~ 2,
+    age <= 50 ~ 3,
+    age > 50 ~ 4
+  ) %>% as.character() %>% fct_infreq(),
+  age_household_ratio = (1 + children)/age,
+  log_household_size = log(1 + children)
+  ) %>% 
+  select(-children) 
+
+health_insurance %>% select(age_bucket, age_household_ratio, log_household_size) %>% summary()
+
+health_insurance %>% count(age_bucket) %>% make_table
+```
+
+```{r eval = F}
+#Base R solution
+
+#See documentation of ?cut
+#health_insurance$age_bucket2 <- cut(x = health_insurance$age, breaks = c(0,23, 36, 50, 500))
+
+#table(health_insurance$age_bucket2)
+```
+
+
+### Task 4 - Hierarchical Clustering
+
+```{r}
+health_insurance %>% ggplot(aes(age, bmi)) + geom_point()
+health_insurance %>% summary()
+
+#euclidean distance example
+x0 <- 40
+y0 <- 40
+
+x1 <- 60
+y1 <- 50
+
+sqrt(sum())
+
+sqrt((40 - 60)^2 + (40-50)^2)
+
+
+```
+
+
+```{r fig.width=12}
+age <- health_insurance$age[1:50]
+bmi <- health_insurance$bmi[1:50]
+
+#your code here
+#apply scaling
+#(no code is provided)
+age <- (age - mean(age))/sd(age)
+bmi <- (bmi - mean(bmi))/sd(bmi)
+
+summary(age)
+summary(bmi)
+
+#put age and bmi into a matrix
+x <- as.matrix(tibble(age = age, bmi = bmi))
+
+#perform hiearchical clustering
+hc_average = hclust(dist(x), method = "average")
+
+#plot the dedgrogram
+plot(hc_average, main = "Average Linkage", xlab = "", sub = "", cex = .9)
+```
+
+Select which clustering method to use as well as the number of clusters.
+
+```{r}
+#make a selection
+selected_height = 1
+```
+
+
+
+```{r}
+cluster_data <- tibble(age = age, bmi = bmi) %>% 
+  mutate(cluster = as.factor(cutree(hc_average,h= selected_height))) 
+
+cluster_data %>% 
+  ggplot(aes(age, bmi, color = cluster)) + 
+  geom_point()
+```
+
+### Task 5 - Select an Interaction
+
+```{r}
+#example of a formula using all variables + an interaction between age and sex
+glm_formula = charges ~ age + sex + bmi + smoker + region + age_bucket + age_household_ratio + log_household_size + age*sex
+
+glm_formula = charges ~ age + sex + bmi + smoker + region  + age_bucket + age_household_ratio + log_household_size + bmi*smoker
+```
+
+
+### Task 6 - Fit two GLMs 
+
+```{r message = F}
+#create a train/test split
+index <- createDataPartition(y = health_insurance$charges, list = F, p = 0.8) %>% as.numeric()
+train <-  health_insurance[index,]
+test <- health_insurance[-index,]
+
+nrow(train) + nrow(test) == nrow(health_insurance)
+nrow(train)/nrow(health_insurance)
+```
+
+
+```{r}
+#your assistant has provided you with these functions
+#no changes need to be made
+mae <- function(y, y_hat){
+  mean(abs(y - y_hat))
+}
+
+fit_glm <- function(family_link = gaussian(link = "identity")){
+  model = glm(formula = glm_formula, 
+            family = family_link,
+            data = train)
+  pred = predict(model, test, type = "response")
+  paste0(
+    "family:", model$family$family, ", ",
+    "link:", model$family$link, ", ",
+    "test mae:", round(mae(pred, test$charges),0))
+}
+```
+
+For example, to fit a GLM with a Gaussian response and a log link, use
+
+```{r}
+fit_glm(gaussian(link = "log"))
+```
+
+```{r}
+fit_glm(gaussian(link = "identity"))
+fit_glm(gaussian(link = "log"))
+fit_glm(gaussian(link = "sqrt"))
+fit_glm(gaussian(link = "1/mu^2"))
+fit_glm(gaussian(link = "inverse"))
+```
+
+```{r}
+fit_glm(Gamma(link = "identity"))
+fit_glm(Gamma(link = "log"))
+fit_glm(Gamma(link = "sqrt"))
+fit_glm(Gamma(link = "1/mu^2"))
+fit_glm(Gamma(link = "inverse"))
+```
+
+```{r}
+fit_glm(inverse.gaussian(link = "identity"))
+fit_glm(inverse.gaussian(link = "log"))
+fit_glm(inverse.gaussian(link = "sqrt"))
+#fit_glm(inverse.gaussian(link = "1/mu^2"))
+#fit_glm(inverse.gaussian(link = "inverse"))
+```
+
+
+To find the possible families, see `?family`.
+
+The possible link functions are `logit`, `probit`, `cauchit`, `cloglog`, `identity`, `log`, `sqrt`, `1/mu^2`, and `inverse`.
+
+### Task 7 - Compare the two models  
+
+
+### Task 8 - Examine the residual plots
+
+
+```{r fig.width=12, fig.height=4}
+#change the family and link to the model that you choose
+model = glm(formula = glm_formula, 
+            family = Gamma(link = "identity"),
+            data = train)
+
+pred = predict(model, test, type = "response")
+mae(pred, test$charges)
+par(mfrow = c(1,3))
+plot(model, which = c(1,2,3))
+summary(model)
+```
+
+### Task 9 - Fit a GBM
+
+Your assistant has already run cross-validation to find the best set of hyperparameters.  This is
+
+ n.trees interaction.depth shrinkage n.minobsinnode
+ 1000                 3      0.01             30
+
+```{r}
+#no changes are needed to this code
+
+#look at many different parameter combinations
+tunegrid <- expand.grid(
+    interaction.depth = c(3),
+    n.trees = c(1000), 
+    shrinkage = c(0.01),
+    n.minobsinnode = c(30)
+    )
+
+#use the mae as the evaluation metric
+mae_summary <- function (data,
+                        lev = NULL,
+                        model = NULL) {
+      out <- mae(data$obs, data$pred)  
+      names(out) <- "mae"
+      out
+}
+
+#use 3-fold cross validation
+control <- trainControl(
+  summaryFunction = mae_summary,
+  method='repeatedcv', 
+  number=3,  
+  p = 0.8)
+
+#fit a GBM using MAE as the error metric
+gbm <- train(charges ~ .,
+            data = train,
+            method='gbm', 
+            tuneGrid=tunegrid, 
+            metric = "mae",
+            maximize = FALSE,
+            trControl=control,
+            verbose = FALSE
+            )
+
+summary(gbm)
+
+saveRDS(gbm, "health_costs_model.rds") 
+```
+
+### Task 10 - Validate the GBM
+
+```{r}
+#get the mae on the test set
+pred = predict(gbm, test)
+mae(pred, test$charges)
+```
+
+### Task 11 - Interpret the GBM
+
+```{r fig.width=5, fig.height=4}
+par(las = 1, cex = 0.5)
+summary(gbm)
+```
+
+```{r}
+pdp::partial(gbm, pred.var = "age", grid.resolution = 20, plot = T)
+pdp::partial(gbm, pred.var = "bmi", grid.resolution = 20, plot = T)
+
+pdp::partial(gbm, pred.var = c("smoker", "age"), grid.resolution = 20, plot = T)
+pdp::partial(gbm, pred.var = c("smoker", "bmi"), grid.resolution = 20, plot = T)
+```
+
+### Task 12 - Executive Summary
+
+Write in the Word template.
