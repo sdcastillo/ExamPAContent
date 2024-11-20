@@ -1,0 +1,330 @@
+---
+title: "June 13, 2019 Exam PA Rmd file"
+editor_options: 
+  chunk_output_type: inline
+---
+Your assistant has provided the following code to load the dataset and assign the base level for each factor variable to the level with the most observations.
+
+```{r}
+# Loading data
+library(ExamPAData)
+library(tidyverse)
+dat <- june_pa %>% 
+  mutate_if(is.character, fct_infreq)
+
+head(dat)
+```
+
+TASK 1
+
+adfda
+
+This chunk makes boxplots of each variable treating the numeric values as factors.
+
+```{r}
+# Boxplots split by level of each variable.
+
+library(ggplot2)
+dat %>% 
+  ggplot(aes(Crash_Score)) + 
+  geom_histogram()
+
+dat$Crash_Score %>% summary()
+```
+
+This chunk provides means and medians of the target variable by factor level.
+
+```{r}
+library(tidyverse)
+vars <- dat %>% select_if(is.factor) %>% names()
+#Means and medians of the target variable split by predictor.
+for (i in vars) {
+  print(i)
+  x <- dat %>% group_by_(i) %>%summarise(mean=mean(Crash_Score),
+                                   median=median(Crash_Score),
+                                   n = n())
+
+  print(x)
+}
+
+```
+
+TASK 2
+
+This chunk makes bar charts that indicate the number of observations at each factor level.
+
+```{r}
+# Bar charts of predictor variables
+
+vars <- colnames(dat)[colnames(dat)!="Crash_Score"]
+for (i in vars) {
+  plot <- ggplot(dat, aes(x=dat[[i]])) + geom_bar() + labs(x=i) + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  print(plot)
+}
+
+```
+
+The following chunk provides code that can be used to combine factor levels. It also relevels in case the new level has the highest frequency.
+
+```{r}
+dat <- dat %>% 
+  mutate(Rd_Feature = case_when(Rd_Feature %in% c("RAMP", "OTHER") ~ "OTHER",
+                                T ~ as.character(Rd_Feature)))
+
+dat <- dat %>% 
+  mutate(Rd_Character = case_when(Rd_Character %in% c("STRAIGHT-LEVEL", "STRAIGHT-GRADE", "STRAIGHT-OTHER") ~ "STRAIGHT",
+                                  T ~ "OTHER")) 
+
+dat <- dat %>% 
+  mutate(Rd_Configuration = ifelse(Rd_Configuration %in% c("ONE-WAY", "UNKNOWN"), "OTHER", "TWO-WAY") ) 
+
+dat <- dat %>% 
+  mutate(Rd_Surface = case_when(Rd_Surface %in% c("OTHER", "GROOVED CONCRETE") ~ "OTHER", 
+                                T ~ as.character(Rd_Surface)) ) 
+
+dat <- dat %>% 
+  mutate(Traffic_Control = case_when(
+    Traffic_Control %in% c("NONE", "OTHER")~ "OTHER",
+    T~ "STOP"))
+
+dat <- dat %>% 
+  mutate(Time_of_Day = case_when(Time_of_Day %in% c(1,2) ~ "Morning",
+                                 Time_of_Day %in% c(3,4) ~ "Day",
+                                 Time_of_Day %in% c(5,6) ~ "Night"))
+```
+
+TASK 3
+
+The following chunks perform PCA on selected variables. The results may provide some insights with respect to combining variables to create new features. These chunks look at the the three weather variables.
+
+In general there are some challenges in using PCA on factor variables and there are alternative approaches (not covered in this exam) specifically designed for this situation. However, PCA can provide insights through the calculated loadings.
+
+Unlike some R programs, prcomp does not handle factor variables automatically. They must be binarized first. To ensure that all factor levels receive loadings, the binarization does not create a base level. A consequence in the situation run below is that although there are 15 variables (after binarization) only 12 are independent. Hence the first 12 principal components explain all the variation.
+
+```{r}
+#Retain only the variables used for PCA and Binarize them
+datPCA <- dat[c("Rd_Conditions", "Light", "Weather")]
+
+library(caret)
+
+# dummyVars is not compatible with factors
+varsPCA <- colnames(datPCA)
+for (var in varsPCA) {
+  datPCA[[var]] <- as.character(datPCA[[var]])
+}
+
+# Binarize variables
+#fullRank = FALSE implies that all values get coded. This is appropriate for PCA (but not for regression) 
+binarizer <- caret::dummyVars(paste("~", paste(varsPCA, collapse = "+")) , data = datPCA, fullRank = FALSE)
+datPCAbin <- data.frame(predict(binarizer, newdata = datPCA))
+head(datPCAbin)
+
+```
+
+
+```{r}
+#Run PCA on the weather variables. Variables are centered and scaled.
+PCAweather <- prcomp(datPCAbin, center = TRUE, scale. = TRUE)
+summary(PCAweather)
+PCAweather$rotation
+```
+
+The following chunk shows how to construct a new feature using insights gained from the loadings. The particular choice of binarized variables and weights are artificial for this illustration and not based on an actual PCA.
+
+```{r}
+#Center and scale the variables
+datPCAbin.std <- as.data.frame(scale(datPCAbin))
+#Create a new feature
+dat2 <- dat #Preserving the original data frame until this work is complete
+dat2$Snow.not.rain <- 0.5*datPCAbin.std$Rd_ConditionsICE.SNOW.SLUSH + .6*datPCAbin.std$WeatherSNOW - .2*datPCAbin.std$WeatherRAIN
+
+datPCAbin.std
+dat2$good_weather <- -0.51*datPCAbin.std$Rd_ConditionsDRY + 0.5*datPCAbin.std$Rd_ConditionsWET -0.46*datPCAbin.std$WeatherCLEAR
+
+head(dat2$good_weather)
+summary(dat2$good_weather)
+
+dat$good_weather = dat2$good_weather
+```
+
+TASK 4
+
+```{r}
+dat %>% names()
+```
+
+
+```{r}
+# Visual exploration of interaction. Try pairs that seem intuitively likely to have an interaction. This example uses Rd_Feature and Rd_Class, but they were selected at random.
+
+ggplot(dat,aes(x=Work_Area,y=Crash_Score,fill=Rd_Class))+
+  geom_boxplot()+
+  facet_wrap(~Work_Area,scale="free")
+
+
+ggplot(dat,aes(x=Time_of_Day,y=Crash_Score,fill=Rd_Configuration))+
+  geom_boxplot()+
+  facet_wrap(~Time_of_Day,scale="free")
+```
+
+TASK 5
+
+Establish the train and test sets on the current variables.
+
+```{r}
+#Create train and test sets
+dat <- dat %>% dplyr::select(-Light, -Weather, -Time_of_Day) %>% 
+  mutate_if(is.factor, fct_infreq) #set base factor levels
+
+library(caret)
+set.seed(1234)
+partition <- createDataPartition(dat$Crash_Score, list = FALSE, p = .75)
+train <- dat[partition, ]
+test <- dat[-partition, ]
+
+print("TRAIN")
+mean(train$Crash_Score)
+
+print("TEST")
+mean(test$Crash_Score)
+
+```
+
+Your assistant has set up code to run on OLS model and evaluate it using root mean squared error against the test set. When running other GLMs, create a new code chunk for each one.
+
+```{r}
+#OLS on current variables 
+GLM <- glm(Crash_Score ~ . + Work_Area*Rd_Class - Month, family = gaussian(), data = train)
+#summary(GLM)
+print("AIC")
+AIC(GLM)
+predict <- predict(GLM,newdata=test,type="response")
+print("RMSE")
+sqrt(sum((test$Crash_Score-predict)^2)/nrow(test))
+
+```
+
+```{r}
+#OLS on current variables 
+GLM <- glm(Crash_Score ~ . + Work_Area*Rd_Class - Month - year, family = gaussian(), data = train)
+#summary(GLM)
+print("AIC")
+AIC(GLM)
+predict <- predict(GLM,newdata=test,type="response")
+print("RMSE")
+sqrt(sum((test$Crash_Score-predict)^2)/nrow(test))
+
+```
+
+```{r}
+GLM <- glm(Crash_Score ~ .  + Work_Area*Rd_Class - Month, family = Gamma(link = "log"), data = train)
+#summary(GLM)
+print("AIC")
+AIC(GLM)
+predict <- predict(GLM,newdata=test,type="response")
+print("RMSE")
+sqrt(sum((test$Crash_Score-predict)^2)/nrow(test))
+
+```
+
+```{r eval=F}
+GLM <- glm(Crash_Score ~ .  + Work_Area*Rd_Class - Month, family = inverse.gaussian(link = "log"), data = train)
+summary(GLM)
+print("AIC")
+AIC(GLM)
+predict <- predict(GLM,newdata=test,type="response")
+print("RMSE")
+sqrt(sum((test$Crash_Score-predict)^2)/nrow(test))
+
+dat %>% count(Month)
+```
+
+
+TASK 6
+
+This code runs the stepAIC procdure. It is set up to use the OLS model previously fit along with forward selection and BIC. That does not imply these are the best choices.
+
+Note: When using BIC, decisions about adding or removing variables are made using that criterion. However, the AIC value presented at the end when the final model is run uses the standard AIC penalty of k = 2. 
+
+```{r}
+library(MASS)
+GLMols1 <- glm(Crash_Score ~ 1, family = Gamma(link = "log"), data = train) #If using forward selection it is necessary to fit a model with no predictors to use as the start.
+#log(nrow(train)
+stepAIC(GLMols1, direction = "forward", k = log(nrow(train)), scope = list(upper = GLM, lower = GLMols1)) #For backward selection, the first argument should be GLMols, the full model.
+```
+
+```{r}
+library(MASS)
+GLMols1 <- glm(Crash_Score ~ 1, family = Gamma(link = "log"), data = train) #If using forward selection it is necessary to fit a model with no predictors to use as the start.
+#log(nrow(train)
+stepAIC(GLMols1, direction = "backward", k = 4, scope = list(upper = GLM, lower = GLMols1)) #For backward selection, the first argument should be GLMols, the full model.
+```
+
+```{r}
+
+
+GLM <- glm(formula = Crash_Score ~ Rd_Class + Rd_Feature, family = Gamma(link = "log"), data = train)
+summary(GLM)
+print("AIC")
+AIC(GLM)
+predict <- predict(GLM,newdata=test,type="response")
+print("RMSE")
+sqrt(sum((test$Crash_Score-predict)^2)/nrow(test))
+plot(GLM)
+```
+
+
+TASK 7
+
+```{r}
+GLM <- glm(formula = Crash_Score ~ Rd_Class + Rd_Feature + Traffic_Control, family = Gamma(link = "log"), data = dat)
+```
+
+
+TASK 8
+
+```{r}
+
+summary(GLM)
+
+library(broom)
+tidy(GLM) %>% 
+  dplyr::select(term, estimate) %>% 
+  mutate(pct_change = round(exp(estimate) - 1,2)) %>% 
+  dplyr::select(-estimate) 
+```
+
+TASK 9
+
+The following code runs a GLM using elastic net and cross validation to set lambda.
+
+```{r}
+
+library(glmnet)
+
+set.seed(42)
+
+X <- model.matrix(Crash_Score ~ . + Work_Area*Rd_Class, train)
+
+m <- cv.glmnet(x = X, 
+            y = train$Crash_Score,
+            family = "gaussian",
+            alpha = 1) #alpha = 1 implies LASSO, alpha = 0 implies ridge
+plot(m)
+```
+
+This chunk fits the model to the full training set using the value of lambda that produced the smallest cross-validation error, obtains predicted values for the test set, and then determines the mean squared error.
+
+```{r}
+
+m.best <- glmnet(x = X, 
+            y = train$Crash_Score,
+            family = "gaussian", lambda = m$lambda.min,
+            alpha = 1) #alpha = 1 implies LASSO, alpha = 0 implies ridge
+X.test <- model.matrix(Crash_Score ~ . + Work_Area*Rd_Class,test)
+m.best$beta
+m.best.predict <- predict(m.best, newx=X.test)
+rmse <- sqrt(sum((m.best.predict - test$Crash_Score)^2)/nrow(test))
+rmse
+
+```
