@@ -1,0 +1,520 @@
+---
+title: "Practice exam - Apartment applicants"
+output:
+  html_document:
+    code_folding: show
+    theme: cerulean
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    toc: yes
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+subtitle: ExamPA.net
+---
+
+```{r warning = F, message=F}
+#NO CHANGES NEEDED
+set.seed(1)
+library(knitr)
+library(broom)
+library(ggplot2)
+library(plyr)
+library(corrplot)
+library(caret)
+library(gridExtra)
+library(scales)
+library(Rmisc)
+library(randomForest)
+library(psych)
+library(xgboost)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(tidyverse)
+library(ExamPAData)
+theme_set(theme_minimal())
+
+df <- apartment_apps
+
+
+```
+
+## Set up
+
+Your assistant has provided you with these code templates.
+
+```{r eval = F}
+#This function will calculate the log-liklihood based on a Poisson model for the number of applicants
+LLfunction <- function(targets, predicted_values){
+  p_v_zero <- ifelse(predicted_values <= 0, 0, predicted_values)
+  p_v_pos <- ifelse(predicted_values <= 0, 0.000001 ,predicted_values)
+  return(sum(targets*log(p_v_pos)) - sum(p_v_zero))
+}
+print("loglikelihood")
+LLfunction(test$applicants,predictions)
+```
+
+
+This code creates a scatter plot, a box plot, and a histogram.
+
+
+```{r eval = F}
+#create a boxplot
+ggplot(df, aes(as.factor(applicants),VARIABLE)) + 
+  geom_boxplot()
+
+#create a scatterplot
+ggplot(df,aes(applicants,VARIABLE)) + 
+  geom_point()
+
+#create a histogram
+ggplot(df,aes(VARIABLE)) + 
+  geom_histogram()
+
+#create a bar plot
+ggplot(df, aes(VARIABLE)) + 
+  geom_bar(stat = "count")
+```
+
+Shows the average number of applicants across factor levels.
+
+```{r eval = F}
+#Average number of health applicants per unit
+df %>% 
+  group_by(VARIABLE) %>% 
+  summarise(
+    average_num_applicants = sum(applicants*num_units)/sum(num_units)
+  )
+```
+
+Converts variables to numeric or factor while also setting the base reference level to the value which has the most observations.
+
+```{r eval = F}
+##Convert to factor and set factor levels
+df <- df %>% mutate(VARIABLE = fct_infreq(as.character(VARIABLE))
+
+#Using Base R
+df$VARIABLE = fct_infreq(as.character(df$VARIABLE))
+
+#Convert to numeric
+df <- df %>% mutate(VARIABLE = fct_infreq(as.characterVARIABLE))
+
+#Using Base R
+df$VARIABLE = as.numeric(df$VARIABLE)
+```
+
+
+## Task 1 - Examine the target variable and number of units
+
+```{r}
+glimpse(df)
+summary(df)
+sum(df$num_units)
+sum(df$num_units*df$applicants)/sum(df$num_units)
+df %>% summarise(avg_applicants = sum(applicants*num_units)/sum(num_units))
+
+
+#NO CODE CHANGES NEEDED
+df %>% 
+  group_by(applicants) %>% 
+  summarise(total_units = sum(num_units))
+
+#Graph A: Histogram
+ggplot(data=df, aes(applicants)) +
+        geom_histogram()
+
+#Graph B: Bar plot
+df %>% 
+  mutate(applicants = as.factor(applicants)) %>% 
+  group_by(applicants) %>% 
+  summarise(
+    total_units = sum(num_units)
+  ) %>% 
+  ungroup() %>% 
+  ggplot(aes(x=applicants, y=total_units)) + 
+  geom_bar(stat="identity") 
+  
+```
+
+## Task 2 - Explore the predictor variables
+
+```{r}
+summary(df)
+#NO CHANGES NEEDED
+#Calculate weighted averages with num_units as the weights
+df %>% 
+  summarise(
+    mean_number_of_units = sum(num_units),
+    mean_sale_price = dollar(sum(num_units*sale_price)/sum(num_units)),
+    mean_overall_qual = sum(num_units*overall_qual)/sum(num_units)
+  )
+
+#neighborhood sale price
+df %>% arrange(desc(neighborhood_saleprice)) %>% head()
+
+
+#Sale Price
+df %>% 
+  ggplot(aes(sale_price,y=..density.., weight = num_units)) + 
+  geom_histogram()
+
+
+df %>% 
+  ggplot(aes(sale_price/neighborhood_saleprice,y=..density.., weight = num_units)) + 
+  geom_histogram()
+
+df %>% 
+  ggplot(aes(neighborhood_saleprice)) + 
+  geom_histogram()
+
+df <- df %>% mutate(log_rel_price = log(sale_price/neighborhood_saleprice),
+                    log_sale_price = log(sale_price)) %>% 
+  dplyr::select(-sale_price, -neighborhood_saleprice)
+```
+
+
+```{r}
+#overall qual
+ggplot(df,aes(overall_qual)) + 
+  geom_bar(stat = "count")
+
+df %>% 
+  summarise(
+    avg = sum(num_units*overall_qual)/sum(num_units)
+  ) 
+
+df %>% 
+  group_by(overall_qual) %>% 
+  summarise(
+    total_units = sum(num_units)
+  ) %>% 
+  ggplot(aes(x=overall_qual, y=total_units)) + 
+  geom_bar(stat="identity") 
+
+#central air
+
+df %>% 
+  group_by(central_air) %>% 
+  summarise(
+    total_units = sum(num_units)
+  ) %>% 
+  ggplot(aes(x=central_air, y=total_units)) + 
+  geom_bar(stat="identity") 
+
+df %>% 
+  group_by(central_air) %>% 
+  summarise(
+    total_units = sum(num_units)
+  ) 
+
+df %>% count(overall_qual)
+
+#check that bae level (the one that appears first) is the one with the most observations
+summary(df$central_air)
+```
+
+```{r}
+df %>% group_by(central_air) %>% 
+  summarise(applicants=sum(applicants),
+            total_units = sum(num_units))
+
+ggplot(df,aes(as.factor(central_air),applicants)) + 
+  geom_boxplot()
+
+df$central_air <- fct_infreq(df$central_air)
+summary(df$central_air)
+```
+
+## Task 3 - Engineer three additional features
+
+Code is provided to calculate the average and create box plots of sale_price by year and month.  
+
+```{r}
+df <- df %>% 
+  mutate(
+    sale_price_per_sqft = exp(log_rel_price) / total_sq_feet,
+    bath_pr_sqft = tot_bathrooms/total_sq_feet,
+    student_apt = ifelse(month_sold %in% c(7,8),1,0)
+  )
+df %>% count(student_apt)
+
+df %>% summary()
+```
+
+
+## Task 4 - Inspect the garage_type variables
+
+No code is provided.
+
+```{r}
+df %>% filter(
+  (garage_type_attchd + garage_type_basment + garage_type_detchd + garage_type_builtIn + garage_type_no_garage) > 0)
+
+#rows_with_errors <- (df$garage_type_attchd==0) + (df$garage_type_detchd==0) + (df$garage_type_builtIn==0) + (df$garage_type_no_garage==0)
+
+#df <- df[-rows_with_errors]
+```
+
+
+No changes are needed to the below code.  It is included because the results may be helpful for subsequent tasks.
+
+```{r}
+#NO CHANGES NEEDED
+#Example: the 18th property has 0's for all garage type variables
+df %>% dplyr::select(contains("garage")) %>%  dplyr::slice(18)
+
+#NO CHANGES NEEDED
+#Calculate the Number of Units for each garage type
+df %>% dplyr::select(num_units,contains("garage")) %>% gather(feature,value,-num_units) %>% group_by(feature) %>%  summarise(total_units=sum(num_units*value))
+
+#NO CHANGES NEEDED
+#Calculate the Number of Units for each neighborhood
+df %>% dplyr::select(num_units,contains("neighborhood")) %>% gather(feature,value,-num_units) %>% group_by(feature) %>%  summarise(total_units=sum(num_units*value))
+```
+
+You do not need to check the neighborhood columns as your assistent has already verified that these are correct for all properties.
+
+## Task 5 - Select GLM parameters
+
+No code is provided
+
+## Task 6 - Fit a GLM
+
+```{r}
+#NO CHANGES NEEDED
+#Create training and test sets
+index <- createDataPartition(y = df$applicants, p = 0.8, list = F)
+
+train <- df %>% dplyr::slice(index)
+test <- df %>% dplyr::slice(-index)
+
+train_x <- train[,-1]
+train_y <- train$applicants
+
+#standardize to be between 0 and 1
+train_number_of_units <- train$num_units/sum(train$num_units)
+
+test_x <- test[,-1]
+test_y <- test$applicants
+
+#standardize to be between 0 and 1
+test_number_of_units <- test$num_units/sum(test$num_units)
+```
+
+
+
+```{r}
+#the base (reference) level for neighborhood is the one with the most observations
+#the base (reference) level for garage is the one with the most observations
+
+#Fit a GLM
+#Do not use the offset or weight variables as predictors.  Remove them from the formula (as the below is doing)
+#Type ?family into the R console to see options for FAMILY
+glm <- glm(
+  applicants ~ . + offset(log(num_units)) - neighborhood_n_ames - garage_type_attchd - num_units - log_sale_price, 
+  data = train,
+  family = poisson(link = "log")
+)
+AIC(glm)
+summary(glm)
+```
+
+
+```{r}
+#Alternative answer
+#Models claim frequency (average applicants per unit)
+glm2 <- glm(
+  applicants/num_units ~ . + - neighborhood_n_ames - garage_type_attchd  - log_sale_price - num_units, 
+  data = train,
+  weights = num_units,
+  family = poisson(link = "log")
+)
+AIC(glm2)
+summary(glm2)
+
+#You can verify that both models return the same predictions
+
+app_count <- predict(glm, type="response", newdata = test)
+
+app_frequency <- predict(glm2, type="response", newdata = test)*test$num_units
+
+head(app_count)
+head(app_frequency)
+```
+
+
+## Task 7 - Use AIC to select features
+
+```{r}
+#NO CODE CHANGES NEEDED
+#The following code will use the same formula and family from the `glm` object to perform stepwise selection
+
+library(MASS)
+stepwise_result <- stepAIC(glm)
+library(dplyr)
+
+final_glm <- glm(
+  stepwise_result$formula, 
+  data = train,
+  family = glm$family
+)
+
+AIC(final_glm)
+summary(final_glm)
+plot(final_glm)
+```
+
+
+## Task 8 - Fit a LASSO
+
+
+```{r}
+#THE ONLY CHANGES NEEDED
+#1. Replace "WEIGHT_VARIABLE" with the weight variable that you used for the GLM
+#2. In the  "lasso_formula" below, use your formula from task 6
+#3. Use the same FAMILY from task 6.  Type ?glmnet into the console to read the possible options
+
+lasso_formula <- applicants ~ . + offset(log(num_units)) - neighborhood_n_ames - garage_type_attchd - num_units - log_sale_price 
+
+lasso_x_train <- model.matrix(lasso_formula, data = train)
+lasso_x_test <- model.matrix(lasso_formula, data = test)
+
+control <-trainControl(method="cv", number=15)
+lassoGrid <- expand.grid(alpha = 1, lambda = seq(0.0001,0.01,by = 0.0005))
+
+#Fit a lasso and inspect the variables which have zero coefficients.
+#Note that the glmnet library only allows the identity link function
+lasso <- train(x = lasso_x_train, 
+               y = train_y, 
+               method = 'glmnet', 
+               family = "poisson",
+
+               trControl = control, 
+               tuneGrid = lassoGrid) 
+
+#This code gets the coefficients from the LASSO which are zero
+lasso_results <- varImp(lasso,scale=F)
+lasso_coefficients <- lasso_results$importance
+
+#Show the coefficients which are zero
+variables_with_zeros <- colnames(lasso_x_train)[which(lasso_coefficients$Overall==0)]
+print("Variables with Coefficients of Zero:")
+cat( paste( variables_with_zeros, collapse='\n' ) )
+```
+
+## Task 9 - Create a bagged tree model
+
+The following code creates eight samples of the data.  20% of records are taken, with replacement, from the data randomly.  
+
+```{r fig.width=10, fig.height=10}
+sample1 <- train %>% sample_frac(0.2,replace=T)
+sample2 <- train %>% sample_frac(0.2,replace=T)
+sample3 <- train %>% sample_frac(0.2,replace=T)
+sample4 <- train %>% sample_frac(0.2,replace=T)
+sample5 <- train %>% sample_frac(0.2,replace=T)
+sample6 <- train %>% sample_frac(0.2,replace=T)
+sample7 <- train %>% sample_frac(0.2,replace=T)
+sample8 <- train %>% sample_frac(0.2,replace=T)
+```
+
+
+This is the setting for the decision tree paramters.  Make your adjustments here to test out different paramters.
+
+```{r}
+#ctrl <- rpart.control(minbucket = 5, cp = 0.01, maxdepth = 5)
+ctrl <- rpart.control(minbucket = 10, cp = 0.001, maxdepth = 5)
+#ctrl <- rpart.control(minbucket = 10, cp = 0.01, maxdepth = 7)
+```
+
+
+The following code sets up a decision tree using all the variables in the dataframe.  Each tree uses only 20% of the records.  The number of units are used as the weights.
+
+```{r warning = F, fig.height=8, fig.width=8}
+tree1 <- rpart(data = sample1, lasso_formula, weights = sample1$num_units, control = ctrl)
+tree2 <- rpart(data = sample2, lasso_formula, weights = sample2$num_units, control = ctrl)
+tree3 <- rpart(data = sample3, lasso_formula, weights = sample3$num_units, control = ctrl)
+tree4 <- rpart(data = sample4, lasso_formula, weights = sample4$num_units, control = ctrl)
+tree5 <- rpart(data = sample5, lasso_formula, weights = sample5$num_units, control = ctrl)
+tree6 <- rpart(data = sample6, lasso_formula, weights = sample6$num_units, control = ctrl)
+tree7 <- rpart(data = sample7, lasso_formula, weights = sample7$num_units, control = ctrl)
+tree8 <- rpart(data = sample8, lasso_formula, weights = sample8$num_units, control = ctrl)
+
+rpart.plot(tree1, cex = .7)
+rpart.plot(tree2, cex = .7)
+rpart.plot(tree3, cex = .7)
+rpart.plot(tree4, cex = .7)
+rpart.plot(tree5, cex = .7)
+rpart.plot(tree6, cex = .7)
+rpart.plot(tree7, cex = .7)
+rpart.plot(tree8, cex = .7)
+```
+
+```{r}
+#make predictions
+tree1_pred <- predict(tree1, newdata = test, type = "vector")
+tree2_pred <- predict(tree2, newdata = test, type = "vector")
+tree3_pred <- predict(tree3, newdata = test, type = "vector")
+tree4_pred <- predict(tree4, newdata = test, type = "vector")
+tree5_pred <- predict(tree5, newdata = test, type = "vector")
+tree6_pred <- predict(tree6, newdata = test, type = "vector")
+tree7_pred <- predict(tree7, newdata = test, type = "vector")
+tree8_pred <- predict(tree8, newdata = test, type = "vector")
+
+#UPDATE THIS FORMULA TO PERFORM BAGGING
+trees_pred <- (tree1_pred + tree2_pred + tree3_pred+ tree4_pred+ tree5_pred+ tree6_pred+ tree7_pred+ tree8_pred)/8
+
+LLfunction <- function(targets, predicted_values){
+  p_v_zero <- ifelse(predicted_values <= 0, 0, predicted_values)
+  p_v_pos <- ifelse(predicted_values <= 0, 0.000001 ,predicted_values)
+  return(sum(targets*log(p_v_pos)) - sum(p_v_zero))
+}
+# "targets" is a vector containing the actual values for the target variable
+# "predicted_values" is a vector containing the predicted values for the target variable
+
+LLfunction(test$applicants, trees_pred)
+
+LLfunction(test$applicants, tree1_pred)
+```
+
+
+## Task 10 - Measure the variable importance with a Random Forest
+
+```{r}
+#NO CHANGES NEEDED
+RF <- randomForest( applicants ~ . + neighborhood_n_ames - garage_type_attchd - num_units - log_sale_price,
+                   data = train,
+                   weights = train_number_of_units, 
+                   ntree=400,
+                   importance=TRUE)
+
+imp_RF <- importance(RF)
+imp_DF <- data.frame(Variables = row.names(imp_RF), MSE = imp_RF[,1])
+imp_DF <- imp_DF[order(imp_DF$MSE, decreasing = TRUE),]
+
+ggplot(imp_DF[1:30,], aes(x=reorder(Variables, MSE), y=MSE, fill=MSE)) + geom_bar(stat = 'identity') + labs(x = 'Variables', y= '% increase MSE if variable is randomly permuted') + coord_flip() + theme(legend.position="none")
+```
+
+## Task 11 - Compare model performance
+
+```{r}
+#This function will calculate the log-liklihood based on a Poisson model for the number of applicants
+LLfunction <- function(targets, predicted_values){
+  p_v_zero <- ifelse(predicted_values <= 0, 0, predicted_values)
+  p_v_pos <- ifelse(predicted_values <= 0, 0.000001, predicted_values)
+  return(sum(targets*log(p_v_pos)) - sum(p_v_zero))
+}
+print("loglikelihood")
+
+glm_pred <- predict(final_glm, type="response", newdata = test)
+lasso_pred <- exp(predict(lasso,newdata = lasso_x_test, weights = test_number_of_units))
+RF_pred <- predict(RF, type="response", newdata = test)
+
+tibble(Model = c("GLM", "LASSO", "Bagged Trees", "Random Forest"),
+       LogLikelihood = c(LLfunction(test$applicants,glm_pred),
+                         LLfunction(test$applicants,lasso_pred),
+                         LLfunction(test$applicants, trees_pred),
+                         LLfunction(test$applicants,RF_pred)))
+```
+
+## Task 12 - Executive Summary
+

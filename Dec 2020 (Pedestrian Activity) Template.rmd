@@ -1,0 +1,443 @@
+---
+title: "December 8, 2020 Exam PA Rmd file"
+---
+
+Task 1: Explore the variables.
+
+Your assistant has provided the code below to look at all the explanatory variables alone and in relation to pedestrians.
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+
+# Load the data
+df <- read.csv("December 8 data.csv")
+
+# Look at the numeric variables
+df %>%
+  select_if(is.numeric) %>%
+  gather() %>% # Make key value pairs that allows the use of facet_wrap
+  ggplot(aes(value)) +
+  facet_wrap(~key, scales = "free") +
+  geom_density()
+
+# Look at the factor variables
+df %>%
+  select_if(is.factor) %>%
+  gather() %>%
+  ggplot(aes(value)) +
+  facet_wrap(~key, scales = "free") +
+  geom_bar() +
+  theme(axis.text.x = element_text(angle = 90))
+
+# Look at target variable against explanatory variables
+ggplot(df, aes(x = weekday, y = pedestrians)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 90))
+
+ggplot(df, aes(x = weather, y = pedestrians)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 90))
+
+ggplot(df, aes(x = as.factor(hour), y = pedestrians)) +
+  geom_boxplot()
+
+ggplot(df, aes(x = temperature, y = pedestrians)) +
+  geom_point() +
+  geom_smooth()
+  
+ggplot(df, aes(x = temp_forecast, y = pedestrians)) +
+  geom_point() +
+  geom_smooth()
+  
+ggplot(df, aes(x = precipitation, y = pedestrians)) +
+  geom_point() +
+  geom_smooth()
+```
+
+Task 2: Reduce factor levels.
+
+This chunk consolidates weekday into three levels.
+
+```{r}
+# The code below results in three levels: Saturday, Sunday, and MTWRF instead of seven levels.
+levels(df$weekday)[!(levels(df$weekday) %in% c("Sunday", "Saturday"))] <- "MTWRF"
+
+# Check results of level reduction
+table(df$weekday)
+ggplot(df, aes(x = weekday)) +
+  geom_bar()
+
+```
+
+This chunk provides code for modifying the weather variable.
+
+```{r}
+# This shows the original levels and their frequency.
+table(df$weather)
+
+# The code below changes the name of the level of a factor variable.  It can be used to combine factor levels either to a newly named level or to an existing level.
+
+# The example below creates a new level "NEWLEVEL" and eliminates two existing levels, "OLDLEVEL1" and "OLDLEVEL2". Replace the items in all caps with your choices as needed. Copy and paste as needed.
+levels(df$weather)[levels(df$weather) == "OLDLEVEL1"] <- "NEWLEVEL"
+levels(df$weather)[levels(df$weather) == "OLDLEVEL2"] <- "NEWLEVEL"
+
+# The example below eliminates the level "OLDLEVEL" and includes in in an existing level "EXISTINGLEVEL". Replace the items in all caps with your choices as needed. Copy and paste as needed.
+levels(df$weather)[levels(df$weather) == "OLDLEVEL"] <- "EXISTINGLEVEL"
+
+# Look at them once you are done.
+ggplot(df, aes(x = weather)) +
+  geom_bar()
+ggplot(df, aes(x = weekday)) +
+  geom_bar()
+```
+
+Task 3: Modify the hour and temperature variables.
+
+The first chunk defines and plots three versions of the hour variable.
+
+```{r}
+# Define three different versions of the hour variable
+
+# hour_1 is a numeric integer variable from 6am to 10pm (10pm = 22)
+df$hour_1 <- df$hour
+
+# hour_2 is a factor variable with levels from 6am to 10pm (10pm = 22)
+df$hour_2 <- as.factor(df$hour)
+
+# hour_3 is a numeric variable from 0 to 8 measuring the number of hours from 2pm (2pm = 14)
+df$hour_3 <- abs(df$hour - 14)
+
+# Plots of pedestrian against each of the hour variables.
+df %>%
+  group_by(hour_1) %>%
+  summarise(mean_pedestrian = mean(pedestrians), .groups = "drop") %>%
+  ggplot(., aes(x = hour_1, y = mean_pedestrian)) +
+  geom_point() +
+  geom_line()
+
+ggplot(df, aes(x = hour_2, y = pedestrians)) +
+  geom_boxplot()
+
+df %>%
+  group_by(hour_3) %>%
+  summarise(mean_pedestrian = mean(pedestrians), .groups = "drop") %>%
+  ggplot(., aes(x = hour_3, y = mean_pedestrian)) +
+  geom_point() +
+  geom_line()
+
+```
+
+Choose an hour variable for tree and GLM models.
+
+```{r}
+# Choose an hour variable to use in tree and GLM models
+# Change the X to a number.
+df$hour_tree <- df$hour_X
+df$hour_glm <- df$hour_X
+
+# Set unused hour variables to null
+df$hour <- NULL
+df$hour_1 <- NULL
+df$hour_2 <- NULL
+df$hour_3 <- NULL
+
+```
+
+Repeat the process for the temperature variable.
+
+```{r}
+# Define two different versions of the temperature variable
+
+# temperature_1 is a numeric variable representing the hourly temperature
+df$temperature_1 <- df$temperature
+
+# temperature_2 is a numeric variable representing the predicted daily temperature.
+df$temperature_2 <- df$temp_forecast
+
+# Plots of pedestrian against each of the temperature variables
+df %>%
+  group_by(temperature_1) %>%
+  summarise(mean_pedestrian = mean(pedestrians), .groups = "drop") %>%
+  ggplot(., aes(x = temperature_1, y = mean_pedestrian)) +
+  geom_point() +
+  geom_line()
+
+ggplot(df, aes(x = temperature_1, y = pedestrians)) +
+  geom_smooth()
+
+df %>%
+  mutate(temp_2_round = round(temperature_2)) %>%
+  group_by(temp_2_round) %>%
+  summarise(mean_pedestrian = mean(pedestrians), .groups = "drop") %>%
+  ggplot(., aes(x = temp_2_round, y = mean_pedestrian)) +
+  geom_point() +
+  geom_line()
+
+ggplot(df, aes(x = temperature_2, y = pedestrians)) +
+  geom_smooth()
+```
+
+Choose a temperature variable for tree and GLM models.
+
+```{r}
+# Select which version of temperature to use in the tree and in the GLM.
+# Replace X below to indicate your choice.
+df$temperature_new <- df$temperature_X
+
+# Set unused temperature variables to null
+df$temperature <- NULL
+df$temp_forecast <- NULL
+df$temperature_1 <- NULL
+df$temperature_2 <- NULL
+```
+
+Task 4: Consider transformations of the target variable.
+ 
+```{r}
+# Your assistant has written the following code to illustrate the transformations.
+
+# Transformation 1: no transformation
+df$target <- df$pedestrians
+ggplot(df, aes(target)) +
+  geom_density()
+
+# Transformation 2: log of pedestrians
+df$target <- log(df$pedestrians)
+ggplot(df, aes(target)) +
+  geom_density()
+
+# Transformation 3: square of pedestrians
+df$target <- (df$pedestrians)^2
+ggplot(df, aes(target)) +
+  geom_density()
+
+# Transformation 4: square root of pedestrians
+df$target <- sqrt(df$pedestrians)
+ggplot(df, aes(target)) +
+  geom_density()
+
+# Transformation 5: inverse of pedestrians
+df$target <- 1/(df$pedestrians)
+ggplot(df, aes(target)) +
+  geom_density()
+
+# Target is then erased because target decisions in future tasks are made for you.
+df$target <- NULL
+```
+
+CHUNK 5: Build two trees.
+
+First run the following code to split the data. Do not change this code.
+
+```{r}
+library(caret)
+set.seed(874)
+
+# The two step process below partitions the dataset into 70/20/10 subsets. First is 70/30.
+train_ind <- createDataPartition(df$pedestrians, p = 0.7, list = FALSE)
+data_train <- df[train_ind, ]
+data_temp <- df[-train_ind, ]
+
+# Then 30 becomes 20/10
+train_ind <- createDataPartition(data_temp$pedestrians, p = 2/3, list = FALSE)
+data_test <- data_temp[train_ind, ]
+data_holdout <- data_temp[-train_ind, ]
+
+# Create similarly named dataset for all
+data_all <- df
+
+# Remove unneeded variables
+rm(train_ind)
+rm(data_temp)
+rm(df)
+
+# Check means of untransformed target variable
+print("Mean value of pedestrians on data splits")
+mean(data_all$pedestrians)
+mean(data_train$pedestrians)
+mean(data_test$pedestrians)
+mean(data_holdout$pedestrians)
+
+```
+
+Now build the two trees. Do not change this code.
+
+```{r}
+# Load the two needed libraries and set seed
+library(rpart)
+library(rpart.plot)
+set.seed(4884)
+
+# Build tree1, a regression tree using an untransformed target
+tree1 <- rpart(pedestrians ~ . - hour_glm,
+  data = data_train, method = "anova",
+  control = rpart.control(minbucket = 50, cp = 0.0001, maxdepth = 4),
+  parms = list(split = "gini")
+)
+
+# Display information on this tree
+tree1
+rpart.plot(tree1, type = 0, digits = 4)
+
+# Build tree2, a regression tree using a transformed target, its square root
+tree2 <- rpart(sqrt(data_train$pedestrians) ~ . - pedestrians - hour_glm,
+  data = data_train, method = "anova",
+  control = rpart.control(minbucket = 50, cp = 0.0001, maxdepth = 4),
+  parms = list(split = "gini")
+)
+
+# Display information on this tree
+tree2
+rpart.plot(tree2, type = 0, digits = 4)
+
+# Calculate test RMSE on tree1
+pred.tree1 <- predict(tree1, newdata = data_test)
+rmse.tree1 <- sqrt(mean((data_test$pedestrians - pred.tree1)^2))
+print("Tree 1 RMSE")
+rmse.tree1
+
+# Calculate test RMSE on tree2
+pred.tree2 <- predict(tree2, newdata = data_test)
+rmse.tree2 <- sqrt(mean((sqrt(data_test$pedestrians) - pred.tree2)^2))
+print("Tree 2 RMSE")
+rmse.tree2
+
+```
+
+Task 6: Consider a random forest.
+
+There is no code for this task.
+
+
+Task 7: Fit a generalized linear model.
+
+Code for the first GLM.
+
+```{r}
+# Fit model 1, using Poisson with log link
+glm.loglink1 <- glm(pedestrians ~ . - hour_tree, family = poisson(link = "log"), data = data_train)
+summary(glm.loglink1)
+
+# Calculate RMSE on training data
+pred.train.glm.loglink1 <- predict(glm.loglink1, data_train, type = "response")
+print("Log link GLM 1 Train RMSE")
+sqrt(sum((data_train$pedestrians - pred.train.glm.loglink1)^2) / nrow(data_train))
+
+# Calculate RMSE on test data
+pred.test.glm.loglink1 <- predict(glm.loglink1, data_test, type = "response")
+print("Log link GLM 1 Test RMSE")
+sqrt(sum((data_test$pedestrians - pred.test.glm.loglink1)^2) / nrow(data_test))
+```
+
+Code for the second GLM.
+
+```{r}
+# Fit model 2, using a different distribution than Poisson but still using log link
+# Replace DISTRIBUTION with the name of the distribution
+glm.loglink2 <- glm(pedestrians ~ . - hour_tree, family = DISTRIBUTION(link = "log"), data = data_train)
+summary(glm.loglink2)
+
+# Calculate RMSE on training data
+pred.train.glm.loglink2 <- predict(glm.loglink2, data_train, type = "response")
+print("Log link GLM 2 Train RMSE")
+sqrt(sum((data_train$pedestrians - pred.train.glm.loglink2)^2) / nrow(data_train))
+
+# Calculate RMSE on test data
+pred.test.glm.loglink2 <- predict(glm.loglink2, data_test, type = "response")
+print("Log link GLM 2 Test RMSE")
+sqrt(sum((data_test$pedestrians - pred.test.glm.loglink2)^2) / nrow(data_test))
+```
+
+Task 8: Consider an interaction.
+
+Your assistant has provided the following code for exploring an interaction.
+
+```{r}
+# This produces scatter plots of a continuous variable by the target, colored by a factor variable.
+# Replace CONTINUOUS with the name of a continuous variable and FACTOR with the name of a factor variable.
+ggplot(data_all, aes(x = CONTINUOUS, y = pedestrians, color = FACTOR)) +
+  geom_point(alpha = 0.5) +
+  facet_wrap(~FACTOR)
+
+# Explore interaction between two factor variables with the following two graphs.
+
+# Look at box plots with target variable on first factor variable, colored by the second factor variable
+# Replace FACTOR1 and FACTOR2 with the names of different factor variables
+ggplot(data_all, aes(x = FACTOR1, y = pedestrians, fill = FACTOR2)) +
+  geom_boxplot()
+
+# Same box plots but split into separate windows
+# Replace FACTOR1 and FACTOR2 with the names of different factor variables
+ggplot(data_all, aes(x = FACTOR1, y = pedestrians, fill = FACTOR2)) +
+  facet_wrap(~FACTOR2) +
+  geom_boxplot()
+
+```
+
+Re-train the GLM using the interaction term.
+
+```{r}
+# Train the GLM from before except include an interaction term of your choosing
+# Replace DISTRIBUTION with the distribution chosen in Task 7. Replace INTERACTION_TERM with v1 * v2 where v1 and v2 are the names of the two variables selected for your interaction.
+glm.interact <- glm(formula = pedestrians ~ . + VARIABLE1*VARIABLE2 - hour_tree, family = DISTRIBUTION(link = "log"), data = data_train)
+
+# Summarize the GLM and interpret the coefficient(s) for the interaction term.
+summary(glm.interact)
+```
+
+Task 9: Select features.
+
+Use forward or backward stepwise selection.
+
+```{r}
+# The following code executes the stepAIC procedure allowing for forward or backward selection.
+library(MASS)
+
+# An empty GLM is needed to implement stepAIC
+# Replace DISTRIBUTION below to match your choice from Task 7.
+glm.none <- glm(pedestrians ~ 1, data = data_train, family = DISTRIBUTION(link = "log"))
+
+# Forward or Backward Selection. Implement one.
+
+# Forward selection
+stepAIC(glm.none,
+  direction = "forward",
+  k = log(nrow(data_train)), # This indicates BIC.
+  scope = list(upper = glm.interact, lower = glm.none)
+)
+
+# Backward selection
+stepAIC(glm.interact,
+  direction = "backward",
+  k = log(nrow(data_train)), # This indicates BIC.
+  scope = list(upper = glm.interact, lower = glm.none)
+)
+```
+
+Task 10: Recommend a model.
+
+The RMSE for a GLM is given in Task 7 and can be applied to other models in the space below. The tree RMSE was calculated in task 5.
+
+```{r}
+
+```
+
+Use the space below to copy code for your chosen model and retrain using data = data_all
+
+```{r}
+
+```
+
+
+Task 11: Validate the model selection.
+
+Use the space below to assess the model selection using the holdout data, accessed by data = data_holdout
+
+```{r}
+
+```
+
+Task 12: Executive summary.
+
+There is no additional code.
