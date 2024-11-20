@@ -1,0 +1,97 @@
+---
+title: "GLMs Lesson"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(purrr)
+sim_norm <- function(x) {
+  rnorm(1, mean = exp(10 + x), sd = 1)
+}
+
+data <- tibble(x = runif(500)) %>% 
+  mutate(y = x %>% map_dbl(sim_norm))
+
+data
+
+glm <- glm(y ~ x, 
+           family = gaussian(link = "log"), 
+           data = data)
+
+summary(glm)
+plot(glm)
+
+#bad example of applying a log transform to Y - never do this on exam pa!
+least_squares <- glm(log(y) ~ x, 
+                     family = gaussian(link = "identity"), 
+                     data = data)
+
+
+#AIC is negative (bad sign)
+summary(least_squares)
+
+#qq plot has deviations along upper and lower tails
+plot(least_squares)
+```
+
+# Change the coefficients
+
+```{r}
+sim_norm2 <- function(x1, x2) {
+  rnorm(1, mean = exp(10 + 5*x1 + 20*x2), sd = 1)
+}
+
+data <- tibble(x1 = runif(500),
+               x2 = runif(500)) %>% 
+  mutate(y = map2_dbl(x1,x2,sim_norm2))
+
+
+glm <- glm(y ~ x1 + x2, family = gaussian(link = "log"), data = data)
+
+summary(glm)
+plot(glm)
+
+
+```
+
+# Interaction Terms
+
+```{r}
+sim_norm2 <- function(x1, x2) {
+  rnorm(1, mean = exp(10 + x1 + x2 + x1*x2), sd = 1)
+}
+
+data <- tibble(x1 = runif(500),
+               x2 = runif(500),
+               interaction = x1*x2) %>% 
+  mutate(y = map2_dbl(x1,x2,sim_norm2))
+
+data
+
+
+glm <- glm(y ~ x1 + x2 + x1:x2, family = gaussian(link = "log"), data = data)
+
+summary(glm)
+plot(glm)
+```
+
+# Quadratic Terms
+
+```{r}
+sim_norm2 <- function(x1, x2) {
+  rnorm(1, mean = exp(10 + x1 + x2 + x1^2 + x2^2), sd = 1)
+}
+
+data <- tibble(x1 = runif(500),
+               x2 = runif(500),
+               x1_sq = x1^2,
+               x2_sq = x2^2) %>% 
+  mutate(y = map2_dbl(x1,x2,sim_norm2))
+
+
+glm <- glm(y ~ x1 + x2 + x1_sq + x2_sq, family = gaussian(link = "log"), data = data)
+
+summary(glm)
+plot(glm)
+```

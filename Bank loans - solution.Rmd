@@ -1,0 +1,281 @@
+---
+title: "Data Loans - Solution"
+output:
+  html_document:
+    code_folding: show
+    theme: cerulean
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    toc: yes
+subtitle: ExamPA.net
+---
+
+```{r message = F, warning = F}
+library(plyr)
+library(tidyverse)
+library(scales)
+library(ExamPAData)
+theme_set(theme_bw())
+df <- bank_loans
+```
+
+## Task 1 - Examine the Target Varible
+
+The following can be used 
+
+```{r eval = F}
+# Remove column
+df$varname <- NULL
+
+# I convert character VARIABLE to a factor.
+df$admit_type_id <- as.factor(df$admit_type_id)
+
+# Exclude certain values
+df <- subset(df, VARIABLE != "VALUE") # Replace VARIABLE and VALUE
+# Value is in quotation marks for factor variables. No quotation marks for numeric variables.
+```
+
+Combine variable levels
+
+```{r eval = F}
+#Using the tidyverse (fastest method)
+df <- df %>% mutate(VARIABLE = ifelse(VARIABLE %in% c("VALUE1", "VALUE2", "VALUE3"), "other", VARIABLE))
+
+# Replace VARIABLE with the variable name to have reduced number of levels.
+# Replace LEVELs with new level names.
+
+print("Data Before Combine Levels")
+table(df$VARIABLE) # Replace VARIABLE
+
+# Combine levels of VARIABLE by mapping one level to another level
+
+var.levels <- levels(as.factor(df$VARIABLE)) # Replace VARIABLE
+df$VARIABLE <- mapvalues(df$VARIABLE, var.levels,
+		c("basic.4y", "basic.6y", "basic.9y", "high.school", "other", "professional.course", "university.degree", "other")) # Replace VARIABLE twice and replace LEVELs with the new names.
+
+print("Data After Combine Levels")
+table(df$VARIABLE) # Replace VARIABLE
+
+# rm(var.levels)
+```
+
+Remove records
+
+```{r eval = F}
+#Remove outliers
+df <- df %>% filter(VARIABLE >= VALUE)
+#in Base R
+#df <- subset(df, VARIABLE >= 40)
+#Can also use != or <=
+```
+
+
+This code will show the percentage of `y` and number of records across different levels of a categorical VARIABLE.
+
+```{r eval = F}
+df %>% group_by(VARIABLE) %>% 
+  summarise(percent_subscribed = percent(mean(y=="yes"), accuracy = 0.01),
+            number_of_policies = n()) %>% 
+  arrange(number_of_policies)
+```
+
+
+
+```{r}
+glimpse(df)
+```
+
+```{r}
+df %>% count(y)
+```
+
+
+```{r}
+summary(df)
+
+df %>% group_by(job) %>% 
+  summarise(percent_subscribed = percent(mean(y=="yes"), accuracy = 0.01),
+            number_of_policies = n()) %>% 
+  arrange(number_of_policies)
+
+df %>% group_by(marital) %>% 
+  summarise(percent_subscribed = percent(mean(y=="yes"), accuracy = 0.01),
+            number_of_policies = n()) %>% 
+  arrange(number_of_policies)
+
+df %>% group_by(education) %>% 
+  summarise(percent_subscribed = percent(mean(y=="yes"), accuracy = 0.01),
+            number_of_policies = n()) %>% 
+  arrange(number_of_policies)
+
+df %>% group_by(housing) %>% 
+  summarise(percent_subscribed = percent(mean(y=="yes"), accuracy = 0.01),
+            number_of_policies = n()) %>% 
+  arrange(number_of_policies)
+
+df %>% group_by(loan) %>% 
+  summarise(percent_subscribed = percent(mean(y=="yes"), accuracy = 0.01),
+            number_of_policies = n()) %>% 
+  arrange(number_of_policies)
+
+df %>% group_by(contact) %>% 
+  summarise(percent_subscribed = percent(mean(y=="yes"), accuracy = 0.01),
+            number_of_policies = n()) %>% 
+  arrange(number_of_policies)
+
+df %>% group_by(day_of_week) %>% 
+  summarise(percent_subscribed = percent(mean(y=="yes"), accuracy = 0.01),
+            number_of_policies = n()) %>% 
+  arrange(number_of_policies)
+
+df %>% group_by(poutcome) %>% 
+  summarise(percent_subscribed = percent(mean(y=="yes"), accuracy = 0.01),
+            number_of_policies = n()) %>% 
+  arrange(number_of_policies)
+```
+
+Combine levels for education
+
+```{r}
+
+
+df <- df %>% mutate(education = ifelse(education %in% c("illiterate", "unknown"), "other", education))
+df %>% count(education)
+#using base R
+
+# Replace VARIABLE with the variable name to have reduced number of levels.
+# Replace LEVELs with new level names.
+# 
+# print("Data Before Combine Levels")
+#table(df$education) # Replace VARIABLE
+# 
+# # Combine levels of VARIABLE by mapping one level to another level
+# 
+#var.levels <- levels(as.factor(df$education)) # Replace VARIABLE
+#df$education <- mapvalues(df$education, var.levels,
+# 		c("basic.4y", "basic.6y", "basic.9y", "high.school", "other", "professional.course", "university.degree", "other")) # Replace VARIABLE twice and replace LEVELs with the new names.
+# 
+# print("Data After Combine Levels")
+# table(df$education) # Replace VARIABLE
+
+# rm(var.levels)
+```
+
+## Task 2 - Decide on which variables to discard
+
+```{r}
+#the data dictionary says to not use duration in predictive modeling
+df <- df %>% select(-duration)
+
+#base R 
+#df$duration <- NULL
+```
+
+## Task 3 - Examine the numeric variables
+
+```{r}
+df %>% select_if(is.numeric) %>% summary()
+```
+
+
+The following creates histograms of the numeric variables
+
+```{r}
+df %>% 
+  select_if(is.numeric) %>% 
+  gather(variable, value) %>% 
+  ggplot(aes(value)) + 
+  geom_histogram() + 
+  facet_wrap(vars(variable), scales = "free")
+```
+
+
+```{r}
+df %>% select_if(is.numeric) %>% summary()
+
+#there are several records above the max of 40 in the data dictionary.  These were removed.
+df %>% count(campaign)
+
+#Remove outliers
+df <- df %>% filter(campaign <= 40)
+#in Base R
+#df <- subset(df, campaign <= 40)
+
+#example creating a histogram
+df %>% ggplot(aes(cons.price.idx)) + geom_histogram()
+df %>% count(emp.var.rate)
+
+df %>% count(pdays)
+
+#example of how to create bins
+df <- df %>% 
+  mutate(pdays_bin = case_when(pdays <= 5 ~ "0-5",
+                               pdays <= 10 ~ "0-10",
+                               pdays <= 30 ~ "10-30",
+                               pdays == 999 ~ "None"))
+
+#remove the original pdays variable
+df <- df %>% select(-pdays)
+
+df %>% count(pdays_bin)
+
+
+# Releveling factor variables
+
+df <- mutate_if(df, is.character, fct_infreq)
+
+# Note: the SOA template code has a section for releveling factors, however, this frequently has errors if you have used any tidyverse functions on factor variable previously.  We recommend that you just remember the above lines of code so that you will not encounter these technical difficulties during the exam
+glimpse(df)
+```
+
+## Task 4 - Examine the factor variables
+
+The following will create bar charts for you. 
+
+```{r}
+#specify the categorical variables (factors) that you want to graph
+#If you created any new variables, add them to this list
+categorical_vars <- c("job", "marital", "education", "housing", "loan", "contact", "day_of_week", "poutcome","pdays_bin")
+```
+
+```{r}
+#No changes are needed to this code chunk
+library(ggpubr)
+
+make_graphs <- function(i = "job"){
+  temp_df <- df %>% select(i, "y")
+  names(temp_df) <- c("x","y")
+  
+  fct_order <- temp_df %>% 
+  count(x) %>% 
+  arrange(n) %>% 
+  select(x) %>% 
+  unlist() %>% 
+  as.character()
+
+  p1 <- temp_df %>% 
+    mutate(x = fct_relevel(x, fct_order)) %>% 
+    ggplot(aes(x, fill = y)) + 
+    geom_bar(stat = "count") + 
+    coord_flip() + 
+    theme(legend.position = "top") + 
+    xlab(i) + 
+    ylab("Total Number of People")
+  
+  p2 <- temp_df %>% 
+    mutate(x = fct_relevel(x, fct_order)) %>% 
+    ggplot(aes(x, fill = y)) + 
+    geom_bar(stat = "count", position = "fill") + 
+    coord_flip() + 
+    theme(legend.position = "top") + 
+    xlab(i) + 
+    ylab("Percent of People")
+  
+  plot(ggarrange(p2, p1))
+}
+
+for(var in categorical_vars){
+  make_graphs(var)
+}
+```

@@ -1,0 +1,289 @@
+---
+title: "GLM Short-Answer Practice Questions"
+output:
+  html_document:
+    df_print: paged
+---
+
+The following code is needed just for setting up your practice questions.  No changes are needed.
+
+```{r setup, include = F, eval=T}
+library(ExamPAData)
+library(caret)
+library(plyr)
+library(dplyr)
+
+## Patient Length of Stay ##
+
+data.all <- patient_length_of_stay
+
+data.all$age <- as.factor(data.all$age) # Replace VARIABLE twice
+data.all$admit_type_id <- as.factor(data.all$admit_type_id) # Replace VARIABLE twice
+
+data.all <- data.all %>% filter(gender != "Unknown/Invalid:")
+
+data.all <- data.all %>% filter(gender %in% c("Male", "Female"))
+
+#gender_missing <- data.all$gender == "Unknown/Invalid:"
+#data.all <- data.all[-gender_missing,]
+
+data.all <- data.all %>% mutate(race = ifelse(race == "?", "Other", race))
+
+#data.all$race <- ifelse(data.all$race == "?", "Other", data.all$race)
+
+data.all$weight <- NULL # Replace VARIABLE
+
+data.all <- data.all %>% mutate(race = ifelse(race == "Asian", "Other", race))
+data.all$race <- ifelse(data.all$race=="Asian", "Other", data.all$race)
+
+library(forcats)
+data.all <- data.all <- data.all %>% mutate_if(is.factor, fct_infreq)
+
+data.all <- data.all <- data.all %>% mutate_if(is.character, fct_infreq)
+
+# Select only the variables used for PCA. Do not change this list.
+data.pca <- data.all[, c("num_procs", "num_meds", "num_ip", "num_diags")]
+
+# Run PCA on the numeric variables. Variables are centered and scaled.
+pca <- prcomp(data.pca, center = TRUE, scale. = TRUE)
+
+# Center and scale the variables
+data.pca.std <- as.data.frame(scale(data.pca))
+
+# Add the first principal component to the data frame.
+data.all$PC1 <- pca$x[, 1]
+
+set.seed(100)
+train_ind <- createDataPartition(data.all$days, p = 0.7, list = FALSE)
+data.train.los <- data.all[train_ind, ]
+data.test.los <- data.all[-train_ind, ]
+
+## Health Costs
+
+theme_set(theme_bw())
+set.seed(1234)
+
+#set factor levels to those with the most observations
+health_insurance <- health_insurance %>% 
+  mutate(sex = fct_infreq(sex),
+         smoker = fct_infreq(smoker),
+         region = fct_infreq(region),
+         )
+
+#your code here
+health_insurance <- health_insurance%>% 
+  mutate(age_bucket = case_when(
+    age < 24 ~ 1,
+    age <= 36 ~ 2,
+    age <= 50 ~ 3,
+    age > 50 ~ 4
+  ) %>% as.character() %>% fct_infreq(),
+  age_household_ratio = (1 + children)/age,
+  log_household_size = log(1 + children)
+  ) 
+
+## Customer Value ##
+
+library(kableExtra)
+theme_set(theme_minimal())
+
+df <- customer_value %>% 
+  mutate(value_flag = ifelse(value_flag=="High",1,0))
+
+df <- df %>% dplyr::mutate(marital_status = ifelse(marital_status == "Married-AF-spouse", 
+                                            yes = "Married-civ-spouse",
+                                            no = marital_status))
+
+df$marital_status <- as.factor(df$marital_status)
+
+simple_levels <- c("Divorced", "Married-spouse", "Married-spouse", "Never-married", "Separated", "Widowed")
+
+#Combine the two marital status levels
+var.levels <- levels(df$marital_status)
+df$marital_status <- mapvalues(df$marital_status,var.levels, simple_levels) 
+
+#Change base level
+table <- as.data.frame(table(df$marital_status))
+max <- which.max(table[,2])#base level is one with most observations
+level.name <- as.character(table[max,1])
+df$marital_status <- relevel(df$marital_status, ref = level.name)
+
+df <- df %>% mutate_if(is.character, fct_infreq)
+
+train_ind <- createDataPartition(df$value_flag, p = 0.7, list = FALSE)
+data.train <- df[train_ind, ]
+data.test <- df[-train_ind, ]
+
+library(rpart)
+library(rpart.plot)
+
+# This code takes a continuous variable and creates a binned factor variable. The code applies it directly to the capital gain variable as an example. right = FALSE means that the left number is included and the right number excluded. So, in this case, the first bin runs from 0 to 1000 and includes 0 and excludes 1000. Note that the code creates a new variable, so the original variable is retained.
+df$cap_gain_cut <- cut(df$cap_gain, breaks = c(0, 5000, 7000, Inf), right = FALSE, labels = c("lowcg", "mediumcg", "highcg"))
+
+#df <- df %>% select(-cap_gain)
+train_ind <- createDataPartition(df$value_flag, p = 0.7, list = FALSE)
+data.train <- df[train_ind, ]
+data.test <- df[-train_ind, ]
+```
+
+# Question 1
+
+Construct a generalized linear model (GLM).
+
+Fit a GLM with all original variables included but excluding the PCA variable. Do not change the Poisson distribution or log link function.
+
+```{r}
+# Fit the model
+glm1 <- glm(days ~ . - PC1,
+  data = data.train.los,
+  family = poisson(link = "log") # Do not change.
+)
+
+summary(glm1)
+
+# Predict on training data
+glm1.pred.train <- predict(glm1, data.train.los, type = "response")
+
+# Calculate the Pearson goodness-of-fit statistic on training data
+sum((data.train.los$days - glm1.pred.train)^2 / glm1.pred.train) / nrow(data.train.los)
+
+# Predict on test data
+glm1.pred.test <- predict(glm1, data.test.los, type = "response")
+
+# Calculate the Pearson goodness-of-fit statistic on test data
+sum((data.test.los$days - glm1.pred.test)^2 / glm1.pred.test) / nrow(data.test.los)
+```
+
+Fit a GLM with the PCA variable created in Task 5 included (and without the numeric variables used to produce the PCA variable). Do not change the Poisson distribution or log link function.
+
+```{r}
+# Fit the model
+glm2 <- glm(days ~ . - num_procs - num_meds - num_ip - num_diags,
+  data = data.train.los,
+  family = poisson(link = "log") # Do not change.
+)
+
+summary(glm2)
+
+# Predict on training data
+glm2.pred.train <- predict(glm2, data.train.los, type = "response")
+
+# Calculate the Pearson goodness-of-fit statistic on training data
+sum((data.train.los$days - glm2.pred.train)^2 / glm2.pred.train) / nrow(data.train.los)
+
+# Predict on test data
+glm2.pred.test <- predict(glm2, data.test.los, type = "response")
+
+# Calculate the Pearson goodness-of-fit statistic on test data
+sum((data.test.los$days - glm2.pred.test)^2 / glm2.pred.test) / nrow(data.test.los)
+```
+
+
+# Question 2
+
+```{r message = F}
+#create a train/test split
+index <- createDataPartition(y = health_insurance$charges, list = F, p = 0.8) %>% as.numeric()
+train <-  health_insurance %>% slice(index)
+test <- health_insurance %>% slice(-index)
+
+nrow(train) + nrow(test) == nrow(health_insurance)
+nrow(train)/nrow(health_insurance)
+```
+
+
+```{r}
+#your assistant has provided you with these functions
+#no changes need to be made
+mae <- function(y, y_hat){
+  mean(abs(y - y_hat))
+}
+
+fit_glm <- function(family_link = gaussian(link = "identity")){
+  model = glm(formula = charges ~ age + sex + bmi + smoker + region + age_bucket + age_household_ratio + log_household_size + bmi*smoker,, 
+            family = family_link,
+            data = train)
+  pred = predict(model, test, type = "response")
+  paste0(
+    "family:", model$family$family, ", ",
+    "link:", model$family$link, ", ",
+    "mae:", round(mae(pred, test$charges),0))
+}
+```
+
+For example, to fit a GLM with a Gaussian response and a log link, use
+
+```{r}
+fit_glm(gaussian(link = "log"))
+```
+
+To find the possible families, see `?family`.
+
+The possible link functions are `logit`, `probit`, `cauchit`, `cloglog`, `identity`, `log`, `sqrt`, `1/mu^2`, and `inverse`.
+
+
+# Question 3
+
+No code provided (short-answer only).
+
+# Question 4
+
+Construct and evaluate a GLM
+
+```{r}
+
+glm <- glm(value_flag ~ VARIABLE_LIST,
+  data = data.train,
+  family = DISTRIBUTION(link = "LINK")
+)
+# Replace VARIABLE LIST with selected variables, DISTRIBUTION with the distribution choice, and LINK with the link choice
+
+summary(glm)
+
+glm.probs <- predict(glm, data.train, type = "response")
+glm.pred <- glm.probs > 0.5
+table(glm.pred, data.train$value_flag)
+
+glm.probs.test <- predict(glm, data.test, type = "response")
+glm.pred.test <- glm.probs.test > 0.5
+table(glm.pred.test, data.test$value_flag)
+
+# Construct ROC and calculate AUC for the training data.
+
+roc <- roc(data.train$value_flag, glm.probs)
+par(pty = "s")
+plot(roc)
+
+pROC::auc(roc)
+
+# Construct ROC and calculate AUC for the test data.
+
+roc <- roc(data.test$value_flag, glm.probs.test)
+
+plot(roc)
+
+pROC::auc(roc)
+```
+
+The following code executes the stepAIC procedure allowing for choices of AIC/BIC and forward/backward.
+
+```{r}
+# This code runs the stepAIC procdure. It is set up to use the GLM model previously fit along with forward #selection and BIC. That does not imply these are the best choices.
+
+# Note: When using BIC, decisions about adding or removing variables are made using that criterion. However, the #AIC value presented at the end when the final model is run uses the standard AIC penalty of k = 2.
+
+library(MASS)
+# If using forward selection it is necessary to fit a model with no predictors to use as the start.
+glm.none <- glm(value_flag ~ 1, data = data.train, family = FAMILY(link = "LINK"))
+
+stepAIC(glm.none,
+  direction = "forward",
+  k = log(nrow(data.train)),
+  scope = list(upper = glm, lower = glm.none) # set k = 2 for AIC
+)
+
+# For backward, replace the very first instance of glm.none with glm.
+```
+
+To evaluate the selected model, copy previous code, changing the variable list to those selected by stepAIC.
+

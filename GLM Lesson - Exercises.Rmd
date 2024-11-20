@@ -1,0 +1,111 @@
+---
+title: "GLMs Lesson"
+output: html_notebook
+---
+
+# Q1 - Why taking the log of the target is a bad idea
+
+The following code illustrates why logging the target is a bad idea.  See for yourself what the residuals should look like in a perfect world.  Compare this to a transformed target glm.
+
+```{r}
+library(tidyverse)
+library(purrr)
+sim_norm <- function(x) {
+  rnorm(1, mean = exp(10 + x), sd = 1)
+}
+
+data <- tibble(x = runif(500)) %>% 
+  mutate(y = x %>% map_dbl(sim_norm))
+
+glm <- glm(y ~ x, 
+           family = gaussian(link = "log"), 
+           data = data)
+
+summary(glm)
+plot(glm)
+
+#bad example of applying a log transform to Y - never do this on exam pa!
+least_squares <- glm(log(y) ~ x, 
+                     family = gaussian(link = "identity"), 
+                     data = data)
+
+
+#AIC is negative (bad sign)
+summary(least_squares)
+
+#qq plot has deviations along upper and lower tails
+plot(least_squares)
+```
+
+# Change the coefficients
+
+```{r}
+sim_norm2 <- function(x1, x2) {
+  rnorm(1, mean = exp(10 + 5*x1 + 20*x2), sd = 1)
+}
+
+data <- tibble(x1 = runif(500),
+               x2 = runif(500)) %>% 
+  mutate(y = map2_dbl(x1,x2,sim_norm2))
+
+
+glm <- glm(y ~ x1 + x2, family = gaussian(link = "log"), data = data)
+
+summary(glm)
+plot(glm)
+
+
+```
+
+# Interaction Terms
+
+```{r}
+#your code here
+```
+
+
+# Quadratic Terms
+
+```{r}
+#your code here
+```
+
+
+# Answer to Video Question
+
+1) How do ridge regression and the lasso improve on ordinary least squares?
+
+OLS uses maximum likelihood to estimate the coefficients and does not take into consideration the number of variables or the sizes of the coefficients used in the model.  Both ridge and the lasso improve the predictive power by taking advantage of the bias variance tradeoff by finding a local minimum in the MSE.  The coefficients can be smaller for ridge regression (according to the L2 norm) and there can be fewer coefficients when using the lasso.
+
+2) In what cases would you expect ridge regression to outperform the lasso and vice versa?
+
+### Data #1
+
+n = 10,000
+p = 500
+
+There is not enough information to make a decision.
+
+### Data #2
+
+n = 5,000
+p = 5
+
+No difference.
+The lasso's variable selection will not make much of a difference because there are only 5 predictors.
+
+### Data #3
+
+n = 10,000
+p_continuous = 100
+p_factor = 2
+
+No difference *when there are few factor levels.*
+If these are binary factors, then there are only two levels in each and only 3 coefficients need to be added to the model.  If they have many levels, then a dummy variable needs to be created for each level.  Say that each factor had 10 levels, then there would be 2*10 - 1 = 19 additional variables, or 119 overall.  
+
+### Data #4
+
+n = 200
+p_continuous = 2
+p_factor = 100
+
